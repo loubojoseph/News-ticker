@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>today's brief</title>
+<style>
+:root{--ink:#1f3d2b;--soft:#4f6b57;--line:#c9d8c6;--accent:#8a6a4a}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0;height:100%;background:transparent}
+body{font:15px/1.45 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);overflow:hidden}
+.card{height:100%;min-height:150px;display:flex;flex-direction:column;gap:8px;padding:14px 16px 12px;border-radius:14px;background:linear-gradient(135deg,#eef4ec 0%,#dfe9dc 100%);border:1px solid var(--line);position:relative;overflow:hidden}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:var(--soft)}
+.top b{color:var(--ink);font-weight:650}
+.chip{white-space:nowrap;padding:3px 10px;border-radius:999px;background:#f7faf6;border:1px solid var(--line);font-size:12.5px;color:var(--ink)}
+.slide{flex:1;display:flex;align-items:center;transition:opacity .35s ease,transform .35s ease}
+.slide.out{opacity:0;transform:translateY(6px)}
+.h{font-size:clamp(17px,3vw,22px);line-height:1.25;font-weight:700;text-wrap:balance;margin:0}
+.bottom{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--soft)}
+.dots{flex:1;display:flex;flex-wrap:wrap;gap:5px;justify-content:center}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--line);border:0;padding:0;cursor:pointer}
+.dot.on{background:var(--ink)}
+.nav{display:flex;gap:6px}
+.nav button{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:#f7faf6;color:var(--ink);cursor:pointer;font-size:15px;line-height:1}
+.nav button:focus-visible,.dot:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.bar{position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--ink);opacity:.55}
+.bar.run{animation:fill var(--t,10s) linear forwards}
+.paused .bar.run{animation-play-state:paused}
+@keyframes fill{to{width:100%}}
+@media (prefers-reduced-motion:reduce){.slide{transition:none}.bar{display:none}}
+@media (max-width:380px){.dots{display:none}}
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="top"><span><b>📰 today's brief</b> · <span id="date"></span></span><span class="chip" id="chip"></span></div>
+  <div class="slide" id="slide"><p class="h" id="h"></p></div>
+  <div class="bottom">
+    <span>full brief below ↓</span>
+    <div class="dots" id="dots"></div>
+    <div class="nav"><button id="prev" aria-label="Previous headline">‹</button><button id="next" aria-label="Next headline">›</button></div>
+  </div>
+  <div class="bar" id="bar"></div>
+</div>
+<script>
+{
+  // Headlines arrive in the address: #d=<base64url of JSON {"d":"Mon 23 Nov","s":10,"i":[["w","headline"],…]}>
+  // Category codes: w = world, u = uk & you, e = engineering, f = football
+  const CATS = {w:"🌍 world", u:"🇬🇧 uk & you", e:"🧪 engineering", f:"⚽ football"};
+  function decode(s) {
+    s = s.replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) s += "=";
+    const bin = atob(s), bytes = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+  let data = {d:"", s:10, i:[]};
+  try { const m = location.hash.match(/d=([A-Za-z0-9_\-]+)/); if (m) data = decode(m[1]); } catch (e) {}
+  const items = Array.isArray(data.i) ? data.i : [];
+  const secs = Math.max(4, Number(data.s) || 10);
+  const $ = id => document.getElementById(id);
+  const card = $("card"), slide = $("slide"), bar = $("bar"), dots = $("dots");
+  const still = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  card.style.setProperty("--t", secs + "s");
+  $("date").textContent = data.d || "";
+  let i = 0, timer = null, paused = false;
+
+  dots.innerHTML = items.map((_, k) => `<button class="dot" aria-label="Headline ${k + 1}" data-k="${k}"></button>`).join("");
+
+  function paint() {
+    const it = items[i];
+    if (!it) { $("h").textContent = "No headlines yet — the morning brief lands around 6:10."; $("chip").textContent = ""; return; }
+    $("h").textContent = it[1] || "";
+    $("chip").textContent = CATS[it[0]] || "";
+    [...dots.children].forEach((d, k) => d.classList.toggle("on", k === i));
+    bar.classList.remove("run"); void bar.offsetWidth; if (!paused) bar.classList.add("run");
+  }
+  function show(n) {
+    if (!items.length) return paint();
+    const next = (n + items.length) % items.length;
+    if (still) { i = next; paint(); return; }
+    slide.classList.add("out");
+    setTimeout(() => { i = next; paint(); slide.classList.remove("out"); }, 300);
+  }
+  function start() { clearInterval(timer); if (items.length > 1) timer = setInterval(() => { if (!paused) show(i + 1); }, secs * 1000); }
+  function restart(n) { show(n); start(); }
+
+  $("next").addEventListener("click", () => restart(i + 1));
+  $("prev").addEventListener("click", () => restart(i - 1));
+  dots.addEventListener("click", e => { const k = e.target.dataset && e.target.dataset.k; if (k !== undefined) restart(Number(k)); });
+  card.addEventListener("mouseenter", () => { paused = true; card.classList.add("paused"); });
+  card.addEventListener("mouseleave", () => { paused = false; card.classList.remove("paused"); });
+  document.addEventListener("keydown", e => { if (e.key === "ArrowRight") restart(i + 1); if (e.key === "ArrowLeft") restart(i - 1); });
+  let x0 = null;
+  card.addEventListener("touchstart", e => { x0 = e.touches[0].clientX; }, {passive: true});
+  card.addEventListener("touchend", e => { if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 40) restart(dx < 0 ? i + 1 : i - 1); x0 = null; });
+  window.addEventListener("hashchange", () => location.reload());
+
+  paint(); start();
+}
+</script>
+</body>
+</html>
